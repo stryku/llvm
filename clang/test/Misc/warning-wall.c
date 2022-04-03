@@ -19,6 +19,7 @@ CHECK-NEXT:      -Wformat-y2k
 CHECK-NEXT:      -Wformat-invalid-specifier
 CHECK-NEXT:      -Wformat-insufficient-args
 CHECK-NEXT:    -Wfor-loop-analysis
+CHECK-NEXT:    -Wwhile-loop-analysis
 CHECK-NEXT:    -Wframe-address
 CHECK-NEXT:    -Wimplicit
 CHECK-NEXT:      -Wimplicit-function-declaration

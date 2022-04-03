@@ -459,7 +459,9 @@ def RangeLoopBindReference : DiagGroup<"range-loop-bind-reference">;
 def RangeLoopAnalysis : DiagGroup<"range-loop-analysis",
                                   [RangeLoopConstruct, RangeLoopBindReference]>;
 def ForLoopAnalysis : DiagGroup<"for-loop-analysis">;
-def LoopAnalysis : DiagGroup<"loop-analysis", [ForLoopAnalysis,
+def WhileLoopAnalysis : DiagGroup<"while-loop-analysis">;
+def LoopAnalysis : DiagGroup<"loop-analysis", [WhileLoopAnalysis,
+                                               ForLoopAnalysis,
                                                RangeLoopAnalysis]>;
 def MalformedWarningCheck : DiagGroup<"malformed-warning-check">;
 def Main : DiagGroup<"main">;
@@ -977,6 +979,7 @@ def Most : DiagGroup<"most", [
     DeleteNonVirtualDtor,
     Format,
     ForLoopAnalysis,
+    WhileLoopAnalysis,
     FrameAddress,
     Implicit,
     InfiniteRecursion,

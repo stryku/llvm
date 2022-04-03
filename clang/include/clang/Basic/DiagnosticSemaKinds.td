@@ -28,6 +28,12 @@ def warn_redundant_loop_iteration : Warning<
   InGroup<ForLoopAnalysis>, DefaultIgnore;
 def note_loop_iteration_here : Note<"%select{decremented|incremented}0 here">;
 
+// While loop analysis
+def warn_variables_not_in_while_loop_body : Warning<
+  "variable%select{s| %1|s %1 and %2|s %1, %2, and %3|s %1, %2, %3, and %4}0 "
+  "used in loop condition not modified in loop body">,
+  InGroup<WhileLoopAnalysis>, DefaultIgnore;
+
 def warn_duplicate_enum_values : Warning<
   "element %0 has been implicitly assigned %1 which another element has "
   "been assigned">, InGroup<DiagGroup<"duplicate-enum">>, DefaultIgnore;

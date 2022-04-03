@@ -1673,51 +1673,6 @@ Sema::DiagnoseAssignmentEnum(QualType DstType, QualType SrcType,
     }
 }
 
-StmtResult Sema::ActOnWhileStmt(SourceLocation WhileLoc,
-                                SourceLocation LParenLoc, ConditionResult Cond,
-                                SourceLocation RParenLoc, Stmt *Body) {
-  if (Cond.isInvalid())
-    return StmtError();
-
-  auto CondVal = Cond.get();
-  CheckBreakContinueBinding(CondVal.second);
-
-  if (CondVal.second &&
-      !Diags.isIgnored(diag::warn_comma_operator, CondVal.second->getExprLoc()))
-    CommaVisitor(*this).Visit(CondVal.second);
-
-  if (isa<NullStmt>(Body))
-    getCurCompoundScope().setHasEmptyLoopBodies();
-
-  return WhileStmt::Create(Context, CondVal.first, CondVal.second, Body,
-                           WhileLoc, LParenLoc, RParenLoc);
-}
-
-StmtResult
-Sema::ActOnDoStmt(SourceLocation DoLoc, Stmt *Body,
-                  SourceLocation WhileLoc, SourceLocation CondLParen,
-                  Expr *Cond, SourceLocation CondRParen) {
-  assert(Cond && "ActOnDoStmt(): missing expression");
-
-  CheckBreakContinueBinding(Cond);
-  ExprResult CondResult = CheckBooleanCondition(DoLoc, Cond);
-  if (CondResult.isInvalid())
-    return StmtError();
-  Cond = CondResult.get();
-
-  CondResult = ActOnFinishFullExpr(Cond, DoLoc, /*DiscardedValue*/ false);
-  if (CondResult.isInvalid())
-    return StmtError();
-  Cond = CondResult.get();
-
-  // Only call the CommaVisitor for C89 due to differences in scope flags.
-  if (Cond && !getLangOpts().C99 && !getLangOpts().CPlusPlus &&
-      !Diags.isIgnored(diag::warn_comma_operator, Cond->getExprLoc()))
-    CommaVisitor(*this).Visit(Cond);
-
-  return new (Context) DoStmt(Body, Cond, DoLoc, WhileLoc, CondRParen);
-}
-
 namespace {
   // Use SetVector since the diagnostic cares about the ordering of the Decl's.
   using DeclSetVector =
@@ -1741,7 +1696,7 @@ namespace {
         Ranges(Ranges),
         Simple(true) {}
 
-    bool isSimple() { return Simple; }
+    bool isSimple() const { return Simple; }
 
     // Replaces the method in EvaluatedExprVisitor.
     void VisitMemberExpr(MemberExpr* E) {
@@ -1886,6 +1841,52 @@ namespace {
     bool FoundDeclInUse() { return FoundDecl; }
 
   };  // end class DeclMatcher
+
+  void CheckWhileLoopConditionalStatement(Sema &S, Expr *Cond, Stmt *Body) {
+
+    if (S.Diags.isIgnored(diag::warn_variables_not_in_while_loop_body,
+                          Cond->getBeginLoc()))
+      return;
+
+    PartialDiagnostic PDiag =
+        S.PDiag(diag::warn_variables_not_in_while_loop_body);
+    DeclSetVector Decls;
+    SmallVector<SourceRange, 10> Ranges;
+    DeclExtractor DE(S, Decls, Ranges);
+    DE.Visit(Cond);
+
+    // Don't analyze complex conditionals.
+    if (!DE.isSimple())
+      return;
+
+    // No decls found.
+    if (Decls.empty())
+      return;
+
+    // Don't warn on volatile, static, or global variables.
+    if (std::any_of(Decls.begin(), Decls.end(), [](const auto *VD) {
+          return VD->getType().isVolatileQualified() || VD->hasGlobalStorage();
+        }))
+      return;
+
+    if (DeclMatcher(S, Decls, Cond).FoundDeclInUse() ||
+        DeclMatcher(S, Decls, Body).FoundDeclInUse())
+      return;
+
+    // Load decl names into diagnostic.
+    if (Decls.size() > 4) {
+      PDiag << 0;
+    } else {
+      PDiag << (unsigned)Decls.size();
+      for (auto *VD : Decls)
+        PDiag << VD->getDeclName();
+    }
+
+    for (auto Range : Ranges)
+      PDiag << Range;
+
+    S.Diag(Ranges.begin()->getBegin(), PDiag);
+  }
 
   void CheckForLoopConditionalStatement(Sema &S, Expr *Second,
                                         Expr *Third, Stmt *Body) {
@@ -2101,6 +2102,55 @@ namespace {
 
 } // end namespace
 
+StmtResult Sema::ActOnWhileStmt(SourceLocation WhileLoc,
+                                SourceLocation LParenLoc, ConditionResult Cond,
+                                SourceLocation RParenLoc, Stmt *Body) {
+  if (Cond.isInvalid())
+    return StmtError();
+
+  auto CondVal = Cond.get();
+  CheckBreakContinueBinding(CondVal.second);
+
+  if (CondVal.second &&
+      !Diags.isIgnored(diag::warn_comma_operator, CondVal.second->getExprLoc()))
+    CommaVisitor(*this).Visit(CondVal.second);
+
+  // Check only if variable is not declared inside the condition.
+  if(!CondVal.first)
+    CheckWhileLoopConditionalStatement(*this, CondVal.second, Body);
+
+  if (isa<NullStmt>(Body))
+    getCurCompoundScope().setHasEmptyLoopBodies();
+
+  return WhileStmt::Create(Context, CondVal.first, CondVal.second, Body,
+                           WhileLoc, LParenLoc, RParenLoc);
+}
+
+StmtResult Sema::ActOnDoStmt(SourceLocation DoLoc, Stmt *Body,
+                             SourceLocation WhileLoc, SourceLocation CondLParen,
+                             Expr *Cond, SourceLocation CondRParen) {
+  assert(Cond && "ActOnDoStmt(): missing expression");
+
+  CheckBreakContinueBinding(Cond);
+  ExprResult CondResult = CheckBooleanCondition(DoLoc, Cond);
+  if (CondResult.isInvalid())
+    return StmtError();
+  Cond = CondResult.get();
+
+  CondResult = ActOnFinishFullExpr(Cond, DoLoc, /*DiscardedValue*/ false);
+  if (CondResult.isInvalid())
+    return StmtError();
+  Cond = CondResult.get();
+
+  // Only call the CommaVisitor for C89 due to differences in scope flags.
+  if (Cond && !getLangOpts().C99 && !getLangOpts().CPlusPlus &&
+      !Diags.isIgnored(diag::warn_comma_operator, Cond->getExprLoc()))
+    CommaVisitor(*this).Visit(Cond);
+
+  CheckWhileLoopConditionalStatement(*this, Cond, Body);
+
+  return new (Context) DoStmt(Body, Cond, DoLoc, WhileLoc, CondRParen);
+}
 
 void Sema::CheckBreakContinueBinding(Expr *E) {
   if (!E || getLangOpts().CPlusPlus)
