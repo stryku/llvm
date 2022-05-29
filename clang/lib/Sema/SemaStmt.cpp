@@ -1848,8 +1848,6 @@ namespace {
                           Cond->getBeginLoc()))
       return;
 
-    PartialDiagnostic PDiag =
-        S.PDiag(diag::warn_variables_not_in_while_loop_body);
     DeclSetVector Decls;
     SmallVector<SourceRange, 10> Ranges;
     DeclExtractor DE(S, Decls, Ranges);
@@ -1873,19 +1871,20 @@ namespace {
         DeclMatcher(S, Decls, Body).FoundDeclInUse())
       return;
 
+    auto Diag = S.Diag(Ranges.begin()->getBegin(),
+                       diag::warn_variables_not_in_while_loop_body);
+
     // Load decl names into diagnostic.
     if (Decls.size() > 4) {
-      PDiag << 0;
+      Diag << 0;
     } else {
-      PDiag << (unsigned)Decls.size();
+      Diag << (unsigned)Decls.size();
       for (auto *VD : Decls)
-        PDiag << VD->getDeclName();
+        Diag << VD->getDeclName();
     }
 
     for (auto Range : Ranges)
-      PDiag << Range;
-
-    S.Diag(Ranges.begin()->getBegin(), PDiag);
+      Diag << Range;
   }
 
   void CheckForLoopConditionalStatement(Sema &S, Expr *Second,
@@ -2116,7 +2115,7 @@ StmtResult Sema::ActOnWhileStmt(SourceLocation WhileLoc,
     CommaVisitor(*this).Visit(CondVal.second);
 
   // Check only if variable is not declared inside the condition.
-  if(!CondVal.first)
+  if (!CondVal.first)
     CheckWhileLoopConditionalStatement(*this, CondVal.second, Body);
 
   if (isa<NullStmt>(Body))
